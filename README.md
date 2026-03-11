@@ -128,3 +128,16 @@ Re-run full configuration after infra changes:
 - SSH unreachable: confirm `ANSIBLE_PRIVATE_KEY_FILE` and `ssh_cidr`.
 - `/dev/shm` errors: handled automatically by `scripts/env.sh`.
 - `kubeadm` errors: verify Kubernetes version in `ansible/group_vars/all.yml`.
+
+## What Was Fixed And Why It Works Now
+
+Earlier runs failed for multiple reasons. These fixes are now in the repo:
+
+- Inventory host resolution: `ansible_host` now maps to `aws_public_ip_address`, so SSH uses the actual EC2 public IP instead of unresolved hostnames.
+- Environment export: `.env` values are exported in `scripts/env.sh`, so `ANSIBLE_PRIVATE_KEY_FILE` and `AWS_REGION` reach Ansible.
+- `/dev/shm` permission: when shared memory is not writable, `ANSIBLE_FORKS=1` is set to avoid multiprocessing errors.
+- kubeadm config API: switched from `kubeadm.k8s.io/v1beta4` (experimental) to `v1beta3` so `kubeadm init` accepts the config.
+- Kubernetes version: set to full semver (`1.30.0`) so kubeadm validates the version.
+- Flannel install timing: added API health checks and waits before applying the CNI, and disabled validation for the manifest to avoid early API readiness errors.
+- Prechecks expanded: playbook now verifies `AWS_REGION`, `ANSIBLE_PRIVATE_KEY_FILE`, AWS credentials, inventory host counts, and `ansible_host` presence.
+- Deprecation warnings: disabled in Ansible config to reduce noise.

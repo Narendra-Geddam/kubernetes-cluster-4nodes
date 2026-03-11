@@ -40,11 +40,29 @@
     mode: "0600"
     remote_src: true
 
+- name: Wait for kube-apiserver to be available
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ control_plane_endpoint_port }}"
+    delay: 5
+    timeout: 300
+
+- name: Wait for Kubernetes API health endpoint
+  become_user: ec2-user
+  environment:
+    KUBECONFIG: /home/ec2-user/.kube/config
+  ansible.builtin.command: "kubectl get --raw=/healthz"
+  register: api_health
+  retries: 30
+  delay: 10
+  until: api_health.rc == 0
+  changed_when: false
+
 - name: Install Flannel CNI
   become_user: ec2-user
   environment:
     KUBECONFIG: /home/ec2-user/.kube/config
-  ansible.builtin.command: "kubectl apply -f {{ flannel_manifest_url }}"
+  ansible.builtin.command: "kubectl apply --validate=false -f {{ flannel_manifest_url }}"
   register: flannel_apply
   retries: 12
   delay: 10
