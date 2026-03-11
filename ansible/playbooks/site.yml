@@ -1,0 +1,30 @@
+---
+- name: Bootstrap Kubernetes prerequisites on all nodes
+  hosts: "node_type_control_plane:node_type_worker"
+  become: true
+  gather_facts: true
+  serial: 4
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - bootstrap
+
+- name: Initialize the control plane
+  hosts: node_type_control_plane
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - control_plane
+
+- name: Join workers to the cluster
+  hosts: node_type_worker
+  become: true
+  gather_facts: true
+  serial: 3
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - workers

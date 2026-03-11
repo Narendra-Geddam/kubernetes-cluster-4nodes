@@ -1,0 +1,46 @@
+---
+- name: Local precheck for Ansible execution prerequisites
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Ensure ANSIBLE_PRIVATE_KEY_FILE is provided
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | length > 0
+        fail_msg: "Set ANSIBLE_PRIVATE_KEY_FILE before running the playbook."
+
+    - name: Validate private key file exists
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') }}"
+      register: key_stat
+
+    - name: Ensure private key file is readable
+      ansible.builtin.assert:
+        that:
+          - key_stat.stat.exists
+          - key_stat.stat.isreg
+          - key_stat.stat.readable
+        fail_msg: "ANSIBLE_PRIVATE_KEY_FILE does not point to a readable file."
+
+- name: Inventory and SSH reachability precheck
+  hosts: "node_type_control_plane:node_type_worker"
+  gather_facts: false
+
+  tasks:
+    - name: Verify SSH connectivity to all nodes
+      ansible.builtin.ping:
+
+- name: Inventory integrity precheck
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Validate required node groups are present
+      ansible.builtin.assert:
+        that:
+          - groups["node_type_control_plane"] | default([]) | length == 1
+          - groups["node_type_worker"] | default([]) | length == 3
+        fail_msg: "Inventory does not match the expected 1 control plane and 3 workers."

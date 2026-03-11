@@ -1,0 +1,64 @@
+---
+- name: Generate kubeadm configuration
+  ansible.builtin.copy:
+    dest: /root/kubeadm-init.yaml
+    mode: "0600"
+    content: |
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: InitConfiguration
+      localAPIEndpoint:
+        advertiseAddress: {{ ansible_default_ipv4.address }}
+        bindPort: {{ control_plane_endpoint_port }}
+      ---
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: ClusterConfiguration
+      clusterName: {{ cluster_name }}
+      kubernetesVersion: v{{ kubernetes_version }}
+      networking:
+        podSubnet: {{ pod_network_cidr }}
+        serviceSubnet: {{ service_cidr }}
+
+- name: Initialize cluster control plane
+  ansible.builtin.command: kubeadm init --config /root/kubeadm-init.yaml
+  args:
+    creates: /etc/kubernetes/admin.conf
+
+- name: Ensure kube config directory for ec2-user
+  ansible.builtin.file:
+    path: /home/ec2-user/.kube
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: "0755"
+
+- name: Copy admin kubeconfig to ec2-user
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/ec2-user/.kube/config
+    owner: ec2-user
+    group: ec2-user
+    mode: "0600"
+    remote_src: true
+
+- name: Install Flannel CNI
+  become_user: ec2-user
+  environment:
+    KUBECONFIG: /home/ec2-user/.kube/config
+  ansible.builtin.command: "kubectl apply -f {{ flannel_manifest_url }}"
+  register: flannel_apply
+  retries: 12
+  delay: 10
+  until: flannel_apply.rc == 0
+  changed_when: "'created' in flannel_apply.stdout or 'configured' in flannel_apply.stdout"
+
+- name: Create worker join command
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: join_command
+  retries: 6
+  delay: 5
+  until: join_command.rc == 0
+  changed_when: false
+
+- name: Publish worker join command
+  ansible.builtin.set_fact:
+    kubeadm_join_command: "{{ join_command.stdout }}"
