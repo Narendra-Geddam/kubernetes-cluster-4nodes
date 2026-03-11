@@ -1,18 +1,57 @@
 # Kubernetes Cluster Single AZ
 
-This project provisions a single Kubernetes cluster in one AWS availability zone with four EC2 nodes:
+This repo builds a single Kubernetes cluster in one AWS availability zone using:
 
+- Terraform for AWS network + EC2 nodes
+- Ansible for Kubernetes bootstrap and configuration
+
+The cluster layout is fixed to 4 nodes:
 - 1 control plane
 - 3 workers
 
-Terraform creates the AWS network and instances. Ansible configures Kubernetes from another machine by using the AWS dynamic inventory plugin.
-
 ## Layout
 
-- `infra/`: Terraform for the VPC, subnet, security group, and EC2 nodes
-- `ansible/`: Portable Ansible configuration for kubeadm bootstrap
+- `infra/`: Terraform configuration
+- `ansible/`: Ansible playbooks, roles, and inventory
+- `scripts/`: bootstrap + helper scripts
 
-## Terraform
+Each folder also has its own README:
+- `infra/README.md`
+- `ansible/README.md`
+- `scripts/README.md`
+
+## Quick Start (New Machine)
+
+1. Install prerequisites:
+- `git`
+- `python3` (3.11+ recommended)
+- `terraform` (>= 1.14.3)
+- AWS CLI (optional, but helpful)
+
+2. Clone the repo and bootstrap tooling:
+
+```bash
+git clone <repo-url>
+cd kubernetes-cluster-4nodes
+./scripts/bootstrap.sh
+```
+
+3. Create `.env` and set required values:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set:
+- `AWS_REGION` (example: `eu-north-1`)
+- `ANSIBLE_PRIVATE_KEY_FILE` (path to your EC2 private key)
+
+4. Ensure AWS credentials are available in your shell (choose one):
+- `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (+ `AWS_SESSION_TOKEN` if needed)
+- `aws sso login` with a configured profile
+- Instance profile if running from EC2
+
+5. Provision infrastructure:
 
 ```bash
 cd infra
@@ -21,32 +60,25 @@ terraform validate
 terraform apply
 ```
 
-Important inputs in `infra/variables.tf`:
+6. Configure the cluster:
 
+```bash
+./scripts/run-ansible.sh
+```
+
+## Terraform Notes
+
+Important variables in `infra/variables.tf`:
+
+- `aws_region`
+- `availability_zone_index`
 - `control_plane_instance_type`
 - `worker_instance_type`
 - `key_name`
 - `ssh_cidr`
+- `root_volume_size`
 
-## Ansible
-
-Run Ansible from another machine with AWS credentials and the EC2 private key available:
-
-```bash
-cd ansible
-ansible-galaxy collection install -r requirements.yml
-export AWS_REGION=eu-north-1
-export ANSIBLE_PRIVATE_KEY_FILE=/path/to/private-key.pem
-ansible-playbook playbooks/precheck.yml
-ansible-playbook playbooks/site.yml
-```
-
-The inventory groups hosts by EC2 tags:
-
-- `node_type_control_plane`
-- `node_type_worker`
-
-## Tags Created For Ansible Discovery
+Terraform creates tags used by Ansible inventory discovery:
 
 - `Project = kubernetes-cluster-single-az`
 - `Environment = single-cluster`
@@ -55,4 +87,44 @@ The inventory groups hosts by EC2 tags:
 - `NodeType = control-plane` or `worker`
 - `Name = k8s-control-plane-1`, `k8s-worker-1`, `k8s-worker-2`, `k8s-worker-3`
 
-# kubernetes-cluster-4nodes
+## Ansible Notes
+
+Ansible uses the AWS EC2 dynamic inventory plugin:
+
+- Inventory config: `ansible/inventory/aws_ec2.yml`
+- Groups: `node_type_control_plane` and `node_type_worker`
+- `ansible_host` is set to the EC2 public IP
+
+The runner script:
+
+- Loads `.env`
+- Activates `.venv`
+- Runs `playbooks/precheck.yml` then `playbooks/site.yml`
+
+## Robust Usage Patterns
+
+Re-run bootstrap if a new machine is missing Ansible or collections:
+
+```bash
+./scripts/bootstrap.sh
+```
+
+Re-run only the precheck to validate access:
+
+```bash
+cd ansible
+ansible-playbook playbooks/precheck.yml
+```
+
+Re-run full configuration after infra changes:
+
+```bash
+./scripts/run-ansible.sh
+```
+
+## Troubleshooting
+
+- Inventory fails: check AWS credentials and `AWS_REGION`.
+- SSH unreachable: confirm `ANSIBLE_PRIVATE_KEY_FILE` and `ssh_cidr`.
+- `/dev/shm` errors: handled automatically by `scripts/env.sh`.
+- `kubeadm` errors: verify Kubernetes version in `ansible/group_vars/all.yml`.

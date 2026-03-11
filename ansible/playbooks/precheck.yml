@@ -5,11 +5,22 @@
   gather_facts: false
 
   tasks:
+    - name: Ensure AWS_REGION is provided
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'AWS_REGION') | length > 0
+        fail_msg: |
+          AWS_REGION is not set.
+          Set AWS_REGION (for example: eu-north-1) before running the playbooks.
+
     - name: Ensure ANSIBLE_PRIVATE_KEY_FILE is provided
       ansible.builtin.assert:
         that:
           - lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | length > 0
-        fail_msg: "Set ANSIBLE_PRIVATE_KEY_FILE before running the playbook."
+        fail_msg: |
+          ANSIBLE_PRIVATE_KEY_FILE is not set.
+          Set ANSIBLE_PRIVATE_KEY_FILE to the path of your EC2 private key.
+          Example: /home/you/keys/Ansible.pem
 
     - name: Validate private key file exists
       ansible.builtin.stat:
@@ -22,7 +33,25 @@
           - key_stat.stat.exists
           - key_stat.stat.isreg
           - key_stat.stat.readable
-        fail_msg: "ANSIBLE_PRIVATE_KEY_FILE does not point to a readable file."
+        fail_msg: |
+          ANSIBLE_PRIVATE_KEY_FILE does not point to a readable file.
+          Verify the path and file permissions.
+
+    - name: Validate AWS credentials using STS
+      amazon.aws.aws_caller_info:
+        region: "{{ lookup('env', 'AWS_REGION') }}"
+      register: aws_identity
+      failed_when: aws_identity is failed
+      tags: aws
+
+    - name: Ensure AWS identity is available
+      ansible.builtin.assert:
+        that:
+          - aws_identity.arn is defined
+        fail_msg: |
+          AWS credentials are not available.
+          Provide AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (and AWS_SESSION_TOKEN if needed),
+          or run `aws sso login` with a configured profile.
 
 - name: Inventory and SSH reachability precheck
   hosts: "node_type_control_plane:node_type_worker"
@@ -38,9 +67,31 @@
   gather_facts: false
 
   tasks:
+    - name: Ensure inventory contains expected hosts
+      ansible.builtin.assert:
+        that:
+          - groups["node_type_control_plane"] | default([]) | length == 1
+          - groups["node_type_worker"] | default([]) | length == 3
+        fail_msg: |
+          Inventory does not match the expected 1 control plane and 3 workers.
+          Check Terraform state and EC2 tags (NodeType, Cluster, Project, Environment, ManagedBy).
+
+    - name: Ensure ansible_host is set to a public IP for each node
+      ansible.builtin.assert:
+        that:
+          - hostvars[item].ansible_host | default('') | length > 0
+        fail_msg: |
+          ansible_host is missing for one or more nodes.
+          Check ansible/inventory/aws_ec2.yml and AWS inventory permissions.
+      loop: "{{ groups['node_type_control_plane'] + groups['node_type_worker'] }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Validate required node groups are present
       ansible.builtin.assert:
         that:
           - groups["node_type_control_plane"] | default([]) | length == 1
           - groups["node_type_worker"] | default([]) | length == 3
-        fail_msg: "Inventory does not match the expected 1 control plane and 3 workers."
+        fail_msg: |
+          Inventory does not match the expected 1 control plane and 3 workers.
+          Check Terraform state and EC2 tags (NodeType, Cluster, Project, Environment, ManagedBy).

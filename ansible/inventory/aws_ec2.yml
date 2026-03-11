@@ -26,7 +26,7 @@ keyed_groups:
     separator: _
 
 compose:
-  ansible_host: public_ip_address
+  ansible_host: aws_public_ip_address
   ansible_user: "'ec2-user'"
   ansible_ssh_private_key_file: "lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE')"
   ansible_ssh_common_args: "'-F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'"

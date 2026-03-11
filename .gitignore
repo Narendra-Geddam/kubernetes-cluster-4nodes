@@ -3,3 +3,8 @@
 *.tfstate.*
 .terraform.lock.hcl
 .ansible/
+.env
+.env.*
+.venv/
+ansible/collections/
+ansible/Ansible.pem
